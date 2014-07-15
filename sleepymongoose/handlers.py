@@ -1,4 +1,5 @@
 # Copyright 2009-2010 10gen, Inc.
+# Copyright 2014 Glamping Hub (https://glampinghub.com)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,18 +39,18 @@ class MongoHandler:
             if len(mongos) == 1:
                 name = "default"
             else:
-                name = host.replace(".", "") 
+                name = host.replace(".", "")
                 name = name.replace(":", "")
 
             self._connect(args, out.ostream, name = name)
-        
+
     def _get_connection(self, name = None, uri='mongodb://localhost:27017'):
         if name == None:
             name = "default"
 
         if name in self.connections:
             return self.connections[name]
-        
+
         try:
             connection = Connection(uri, network_timeout = 2)
         except (ConnectionFailure, ConfigurationError):
@@ -98,7 +99,7 @@ class MongoHandler:
         if getattr(obj, '__iter__', False) == False:
             out('{"ok" : 0, "errmsg" : "type is not iterable: %s"}' % str)
             return None
- 
+
         return obj
 
 
@@ -130,13 +131,13 @@ class MongoHandler:
             result['cmd'] = args.getvalue('cmd')
 
         out(json.dumps(result, default=json_util.default))
-        
+
     def _hello(self, args, out, name = None, db = None, collection = None):
-        out('{"ok" : 1, "msg" : "Uh, we had a slight weapons malfunction, but ' + 
+        out('{"ok" : 1, "msg" : "Uh, we had a slight weapons malfunction, but ' +
             'uh... everything\'s perfectly all right now. We\'re fine. We\'re ' +
             'all fine here now, thank you. How are you?"}')
         return
-        
+
     def _status(self, args, out, name = None, db = None, collection = None):
         result = {"ok" : 1, "connections" : {}}
 
@@ -144,7 +145,7 @@ class MongoHandler:
             result['connections'][name] = "%s:%d" % (conn.host, conn.port)
 
         out(json.dumps(result))
-    
+
     def _connect(self, args, out, name = None, db = None, collection = None):
         """
         connect to a mongod
@@ -197,12 +198,12 @@ class MongoHandler:
 
         if not 'password' in args:
             out('{"ok" : 0, "errmsg" : "password must be defined"}')
-        
+
         if not conn[db].authenticate(args.getvalue('username'), args.getvalue('password')):
             out('{"ok" : 0, "errmsg" : "authentication failed"}')
         else:
             out('{"ok" : 1}')
-        
+
     def _find(self, args, out, name = None, db = None, collection = None):
         """
         query the database.
@@ -219,7 +220,7 @@ class MongoHandler:
 
         if db == None or collection == None:
             out('{"ok" : 0, "errmsg" : "db and collection must be defined"}')
-            return            
+            return
 
         criteria = {}
         if 'criteria' in args:
@@ -276,7 +277,7 @@ class MongoHandler:
         batch_size = 15
         if 'batch_size' in args:
             batch_size = int(args['batch_size'][0])
-            
+
         self.__output_results(cursor, out, batch_size)
 
 
@@ -328,7 +329,7 @@ class MongoHandler:
         except StopIteration:
             # this is so stupid, there's no has_next?
             pass
-        
+
         out(json.dumps({"results" : batch, "id" : cursor.id, "ok" : 1}, default=json_util.default))
 
 
@@ -350,7 +351,7 @@ class MongoHandler:
             out('{"ok" : 0, "errmsg" : "db and collection must be defined"}')
             return
 
-        if "docs" not in args: 
+        if "docs" not in args:
             out('{"ok" : 0, "errmsg" : "missing docs"}')
             return
 
@@ -399,8 +400,8 @@ class MongoHandler:
         if db == None or collection == None:
             out('{"ok" : 0, "errmsg" : "db and collection must be defined"}')
             return
-        
-        if "criteria" not in args: 
+
+        if "criteria" not in args:
             out('{"ok" : 0, "errmsg" : "missing criteria"}')
             return
         criteria = self._get_son(args.getvalue('criteria'), out)
@@ -413,7 +414,7 @@ class MongoHandler:
         newobj = self._get_son(args.getvalue('newobj'), out)
         if newobj == None:
             return
-        
+
         upsert = False
         if "upsert" in args:
             upsert = bool(args.getvalue('upsert'))
@@ -443,13 +444,13 @@ class MongoHandler:
         if db == None or collection == None:
             out('{"ok" : 0, "errmsg" : "db and collection must be defined"}')
             return
-        
+
         criteria = {}
         if "criteria" in args:
             criteria = self._get_son(args.getvalue('criteria'), out)
             if criteria == None:
                 return
-        
+
         result = conn[db][collection].remove(criteria)
 
         self.__safety_check(args, out, conn[db])
@@ -478,7 +479,7 @@ class MongoHandler:
             method = "GET"
             if 'method' in request:
                 method = request['method']
-            
+
             db = None
             if 'db' in request:
                 db = request['db']
@@ -511,7 +512,41 @@ class MongoHandler:
 
         out("]")
 
-        
+    def _aggregate(self, args, out, name=None, db=None, collection=None):
+        """
+        aggregate query results
+        """
+
+        if type(args).__name__ != 'dict':
+            out('{"ok" : 0, "errmsg" : "_find must be a GET request"}')
+            return
+
+        conn = self._get_connection(name)
+        if conn is None:
+            out('{"ok" : 0, "errmsg" : "couldn\'t get connection to mongo"}')
+            return
+
+        if db is None or collection is None:
+            out('{"ok" : 0, "errmsg" : "db and collection must be defined"}')
+            return
+
+        criteria = {}
+        if 'criteria' in args:
+            criteria = self._get_son(args['criteria'][0], out)
+            if criteria is None:
+                criteria = {}
+
+        group = None
+        if 'group' in args:
+            group = self._get_son(args['group'][0], out)
+        if group is None:
+            return
+
+        query = [{'$match': criteria}, {'$group': group}]
+        results = conn[db][collection].aggregate(query)
+        out(json.dumps(results))
+
+
 class MongoFakeStream:
     def __init__(self):
         self.str = ""
