@@ -532,11 +532,42 @@ class MongoHandler:
         if 'group' in args:
             group = self._get_son(args['group'][0], out)
         if group is None:
+            out('{"ok" : 0, "errmsg" : "group parameter is required"}')
             return
 
         query = [{'$match': criteria}, {'$group': group}]
         results = conn[db][collection].aggregate(query)
-        out(json.dumps(results))
+        out(json.dumps(results, default=json_util.default))
+
+    def _count(self, args, out, name=None, db=None, collection=None):
+        """
+        count elements in a query
+        """
+
+        if type(args).__name__ != 'dict':
+            out('{"ok" : 0, "errmsg" : "_find must be a GET request"}')
+            return
+
+        conn = self._get_connection(name)
+        if conn is None:
+            out('{"ok" : 0, "errmsg" : "couldn\'t get connection to mongo"}')
+            return
+
+        if db is None or collection is None:
+            out('{"ok" : 0, "errmsg" : "db and collection must be defined"}')
+            return
+
+        criteria = {}
+        if 'criteria' in args:
+            criteria = self._get_son(args['criteria'][0], out)
+            if criteria is None:
+                return
+
+        if criteria:
+            result = conn[db][collection].find(spec=criteria).count()
+        else:
+            result = conn[db][collection].count()
+        out(result)
 
 
 class MongoFakeStream:
